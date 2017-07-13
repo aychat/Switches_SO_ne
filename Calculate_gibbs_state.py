@@ -47,16 +47,6 @@ class SplitOpRho:
             raise AttributeError("Coordinate grid range (X_amplitude) was not specified")
 
         try:
-            self.Vg
-        except AttributeError:
-            raise AttributeError("Potential energy (V) was not specified")
-
-        try:
-            self.K
-        except AttributeError:
-            raise AttributeError("Momentum dependence (K) was not specified")
-
-        try:
             self.kT
         except AttributeError:
             raise AttributeError("Temperature (kT) was not specified")
@@ -106,7 +96,8 @@ class SplitOpRho:
         ###################################################################################
 
         # Get the sum of the potential energy contributions
-        self.expV = ne.evaluate(self.VgX1, local_dict=self.__dict__) + ne.evaluate(self.VgX2, local_dict=self.__dict__)
+        self.expV = ne.evaluate(self.VgX.format(x='X1'), local_dict=self.__dict__)\
+                    + ne.evaluate(self.VgX.format(x='X2'), local_dict=self.__dict__)
         self.expV *= -0.25 * self.dbeta
 
         # Make sure that the largest value is zero
@@ -115,7 +106,8 @@ class SplitOpRho:
         np.exp(self.expV, out=self.expV)
 
         # Get the sum of the kinetic energy contributions
-        self.expK = ne.evaluate(self.KP1, local_dict=self.__dict__) + ne.evaluate(self.KP2, local_dict=self.__dict__)
+        self.expK = ne.evaluate(self.KP.format(p='P1'), local_dict=self.__dict__) \
+                    + ne.evaluate(self.KP.format(p='P2'), local_dict=self.__dict__)
         self.expK *= -0.5 * self.dbeta
 
         # Make sure that the largest value is zero
@@ -145,12 +137,6 @@ class SplitOpRho:
         self.rho *= self.expV
 
         return self.rho
-
-    def Vg(self, q):
-        return eval(self.codeVg)
-
-    def K(self, p):
-        return eval(self.codeK)
 
     def get_gibbs_state(self):
         """
@@ -195,8 +181,7 @@ if __name__ == '__main__':
         gamma=0.5,
 
         # kinetic energy part of the hamiltonian
-        KP1="0.5*P1**2",
-        KP2="0.5*P2**2",
+        KP="0.5*{p}**2",
         freq_Vg=1.075,
         freq_Ve=1.075,
         disp=1.,
@@ -204,11 +189,9 @@ if __name__ == '__main__':
         delt=0.75,
 
         # potential energy part of the hamiltonian
-        VgX1="0.5*(freq_Vg*X1)**2",
-        VgX2="0.5*(freq_Vg*X2)**2",
+        VgX="0.5*(freq_Vg*{x})**2",
 
-        VeX1="0.5*(freq_Ve*(X1-disp))**2 + Ediff",
-        VeX2="0.5*(freq_Ve*(X2-disp))**2 + Ediff"
+        VeX="0.5*(freq_Ve*({x}-disp))**2 + Ediff",
     )
 
     print("Calculating the Gibbs state...")

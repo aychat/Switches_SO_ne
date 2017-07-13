@@ -80,37 +80,56 @@ class RhoPropagate:
         self.P2 = fft.fftshift(self.Prange[np.newaxis, :])
 
         # Pre-calculate the potential energy phase
-        self.expV = ne.evaluate(self.VgX2, local_dict=self.__dict__) - ne.evaluate(self.VgX1, local_dict=self.__dict__) \
-                    + ne.evaluate(self.VeX2, local_dict=self.__dict__) - ne.evaluate(self.VeX1, local_dict=self.__dict__)
-        self.expV = 0.5 * 1j * self.dt * self.expV
-        np.exp(self.expV, out=self.expV)
+        # self.expV = ne.evaluate(self.VgX.format(x='X2'), local_dict=self.__dict__) \
+        #             - ne.evaluate(self.VgX.format(x='X1'), local_dict=self.__dict__) \
+        #             + ne.evaluate(self.VeX.format(x='X2'), local_dict=self.__dict__) \
+        #             - ne.evaluate(self.VeX.format(x='X1'), local_dict=self.__dict__)
 
+
+        self.expV = ne.evaluate(
+                'exp(0.5j * dt * ('
+                + self.VgX.format(x='X2') + '-'
+                + self.VgX.format(x='X1') + '+'
+                + self.VeX.format(x='X2') + '+'
+                + self.VeX.format(x='X1') +
+                '))',
+                local_dict=self.__dict__
+        )
+
+        # CHNEGE THIS
         # Pre-calculate the kinetic energy phase
-        self.expK = ne.evaluate(self.KP2, local_dict=self.__dict__) - ne.evaluate(self.KP1, local_dict=self.__dict__)
+        self.expK = ne.evaluate(self.KP.format(p='P2'), local_dict=self.__dict__)\
+                    - ne.evaluate(self.KP.format(p='P1'), local_dict=self.__dict__)
         self.expK = 1j * self.dt * self.expK
-        np.exp(self.expK, out=self.expK)
+        ne.evaluate("exp(expK)", local_dict=self.__dict__, out=self.expK)
 
-        # self.A_params = [-0.64898977, -1.69550489, -2.0395354, -2.63135685, -3.31247001, -3.48197219,
-        #                  -4.23476381, -4.50149803, -4.56541647, -4.81933806]
-        # self.phi_params = [3.1880468, 1.52498729, 0.88176458, -0.07275246, -0.86039341, -1.16403224,
-        #                    -1.44293199, -1.4153083, -1.40767955, -1.07932149]
-        # self.freq = np.linspace(self.field_freq_min, self.field_freq_max, self.field_freq_num)
-        # self.A_params = np.random.uniform(0.01, 0.1, self.field_freq_num)
-        # self.phi_params = np.random.uniform(0.01, 0.1, self.field_freq_num)
+        # Generate codes
+        self.code_DX1 = "sqrt( Vge ** 2 + 0.25 * (" \
+                        + self.VgX.format(x='X1') + '-' + self.VeX.format(x='X1') \
+                        + ") ** 2 )"
+
+        self.code_DX2 = "sqrt( Vge ** 2 + 0.25 * (" \
+                        + self.VgX.format(x='X2') + '-' + self.VeX.format(x='X2') \
+                        + ") ** 2 )"
+
+        self.D = np.zeros(self.rho_g.shape, dtype=np.float)
+
+        self.code_S = "sin(D * dt) / D"
+        self.S = np.zeros_like(self.D)
+
+
 
     def get_CML_matrices(self, q, t):
         # assert q is self.X1 or q is self.X2, "Either X1 or X2 expected as coordinate"
 
-        if q is self.X1:
-            Vg_minus_Ve = ne.evaluate(self.VgX1, local_dict=self.__dict__) \
-                          - ne.evaluate(self.VeX1, local_dict=self.__dict__)
-        if q is self.X2:
-            Vg_minus_Ve = ne.evaluate(self.VgX2, local_dict=self.__dict__) \
-                          - ne.evaluate(self.VeX2, local_dict=self.__dict__)
+        self.Vge = self.Vge(q, t)
 
-        Vge = self.Vge(q, t)
+        ne.evaluate(
+            self.code_DX1 if q is self.X1 else self.code_DX2,
+            local_dict = self.__dict__,
+            out=self.D
+        )
 
-        D = np.sqrt(Vge**2 + 0.25*Vg_minus_Ve**2)
 
         S = np.sin(D * self.dt)
         S /= D
@@ -143,26 +162,12 @@ class RhoPropagate:
         C, M, L = self.get_CML_matrices(self.X2, t)
         return C - 1j * M, -1j * L, C + 1j * M
 
-    # def Vg(self, q):
-    #     return eval(self.codeVg)
-    #
-    # def Ve(self, q):
-    #     return eval(self.codeVe)
-
     def Vge(self, q, t):
         return eval(self.codeVge)
-
-    # def field(self, t):
-    #     sum_field = 0.0
-    #     for i in range(self.field_freq_num):
-    #         sum_field += self.A_params[i]*np.cos(t*self.freq[i] + self.phi_params[i])
-    #     return eval(self.code_envelope)*sum_field
 
     def field(self, t):
         return eval(self.codefield)
 
-    # def K(self, p):
-    #     return eval(self.codeK)
 
     def slice(self, *args):
         """
@@ -408,27 +413,24 @@ if __name__ == '__main__':
         kT=0.1,
         Tsteps=500,
         field_sigma2=2 * .6 ** 2,
-        gamma=0.5,
+        gamma=0.005,
 
         # kinetic energy part of the hamiltonian
-        codeK="0.5*p**2",
-        KP1="0.5*P1**2",
-        KP2="0.5*P2**2",
+        KP="0.5*{p}**2",
+
         freq_Vg=1.075,
         freq_Ve=1.075,
         disp=1.,
         Ediff=9.,
         delt=0.75,
+
         # potential energy part of the hamiltonian
-        codeVg="0.5*(self.freq_Vg*q)**2",
-        VgX1="0.5*(freq_Vg*X1)**2",
-        VgX2="0.5*(freq_Vg*X2)**2",
-        codeVe="0.5*(self.freq_Ve*(q-self.disp))**2 + self.Ediff",
-        VeX1="0.5*(freq_Ve*(X1-disp))**2 + Ediff",
-        VeX2="0.5*(freq_Ve*(X2-disp))**2 + Ediff",
+        VgX="0.5*(freq_Vg*{x})**2",
+        VeX="0.5*(freq_Ve*({x}-disp))**2 + Ediff",
+
         codeVge="-.05*q*self.field(t)",
         codedipole=".05*q",
-        codefield="np.exp(-(1./self.field_sigma2)*(t - 0.5*self.dt*self.Tsteps)**2)*np.cos(self.delt*self.Ediff*t)"
+        codefield="50.*np.exp(-(1./self.field_sigma2)*(t - 0.5*self.dt*self.Tsteps)**2)*np.cos(self.delt*self.Ediff*t)"
     )
 
     import time
