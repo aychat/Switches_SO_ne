@@ -90,53 +90,48 @@ class RhoPropagate:
                 'exp(0.5j * dt * ('
                 + self.VgX.format(x='X2') + '-'
                 + self.VgX.format(x='X1') + '+'
-                + self.VeX.format(x='X2') + '+'
+                + self.VeX.format(x='X2') + '-'
                 + self.VeX.format(x='X1') +
                 '))',
                 local_dict=self.__dict__
         )
 
-        # CHNEGE THIS
+        # CHANEGE THIS
         # Pre-calculate the kinetic energy phase
-        self.expK = ne.evaluate(self.KP.format(p='P2'), local_dict=self.__dict__)\
-                    - ne.evaluate(self.KP.format(p='P1'), local_dict=self.__dict__)
-        self.expK = 1j * self.dt * self.expK
-        ne.evaluate("exp(expK)", local_dict=self.__dict__, out=self.expK)
+        # self.expK = ne.evaluate(self.KP.format(p='P2'), local_dict=self.__dict__)\
+        #             - ne.evaluate(self.KP.format(p='P1'), local_dict=self.__dict__)
+        # self.expK = 1j * self.dt * self.expK
+        # ne.evaluate("exp(expK)", local_dict=self.__dict__, out=self.expK)
+
+        self.expK = ne.evaluate(
+            'exp(1j * dt * ('
+            + self.KP.format(p='P2') + '-'
+            + self.KP.format(p='P1') +
+            '))',
+            local_dict=self.__dict__
+        )
 
         # Generate codes
-        self.code_DX1 = "sqrt( Vge ** 2 + 0.25 * (" \
-                        + self.VgX.format(x='X1') + '-' + self.VeX.format(x='X1') \
-                        + ") ** 2 )"
-
-        self.code_DX2 = "sqrt( Vge ** 2 + 0.25 * (" \
-                        + self.VgX.format(x='X2') + '-' + self.VeX.format(x='X2') \
-                        + ") ** 2 )"
-
-        self.D = np.zeros(self.rho_g.shape, dtype=np.float)
-
-        self.code_S = "sin(D * dt) / D"
-        self.S = np.zeros_like(self.D)
-
+        self.Vg_minus_Ve_X1 = ne.evaluate(self.VgX.format(x='X1') + '-' + self.VeX.format(x='X1'),
+                                          local_dict=self.__dict__)
+        self.Vg_minus_Ve_X2 = ne.evaluate(self.VgX.format(x='X2') + '-' + self.VeX.format(x='X2'),
+                                          local_dict=self.__dict__)
 
 
     def get_CML_matrices(self, q, t):
         # assert q is self.X1 or q is self.X2, "Either X1 or X2 expected as coordinate"
 
-        self.Vge = self.Vge(q, t)
+        Vge = self.Vge(q, t)
 
-        ne.evaluate(
-            self.code_DX1 if q is self.X1 else self.code_DX2,
-            local_dict = self.__dict__,
-            out=self.D
-        )
+        self.Vg_minus_Ve = (self.Vg_minus_Ve_X1 if q is self.X1 else self.Vg_minus_Ve_X2)
 
-
+        D = np.sqrt(Vge ** 2 + 0.25 * self.Vg_minus_Ve_X1 ** 2)
         S = np.sin(D * self.dt)
         S /= D
 
         C = np.cos(D * self.dt)
 
-        M = 0.5 * S * Vg_minus_Ve
+        M = 0.5 * S * self.Vg_minus_Ve
 
         L = S * Vge
 
