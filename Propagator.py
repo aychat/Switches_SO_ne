@@ -79,13 +79,6 @@ class RhoPropagate:
         self.P1 = fft.fftshift(self.Prange[:, np.newaxis])
         self.P2 = fft.fftshift(self.Prange[np.newaxis, :])
 
-        # Pre-calculate the potential energy phase
-        # self.expV = ne.evaluate(self.VgX.format(x='X2'), local_dict=self.__dict__) \
-        #             - ne.evaluate(self.VgX.format(x='X1'), local_dict=self.__dict__) \
-        #             + ne.evaluate(self.VeX.format(x='X2'), local_dict=self.__dict__) \
-        #             - ne.evaluate(self.VeX.format(x='X1'), local_dict=self.__dict__)
-
-
         self.expV = ne.evaluate(
                 'exp(0.5j * dt * ('
                 + self.VgX.format(x='X2') + '-'
@@ -96,13 +89,6 @@ class RhoPropagate:
                 local_dict=self.__dict__
         )
 
-        # CHANEGE THIS
-        # Pre-calculate the kinetic energy phase
-        # self.expK = ne.evaluate(self.KP.format(p='P2'), local_dict=self.__dict__)\
-        #             - ne.evaluate(self.KP.format(p='P1'), local_dict=self.__dict__)
-        # self.expK = 1j * self.dt * self.expK
-        # ne.evaluate("exp(expK)", local_dict=self.__dict__, out=self.expK)
-
         self.expK = ne.evaluate(
             'exp(1j * dt * ('
             + self.KP.format(p='P2') + '-'
@@ -112,28 +98,37 @@ class RhoPropagate:
         )
 
         # Generate codes
-        self.Vg_minus_Ve_X1 = ne.evaluate(self.VgX.format(x='X1') + '-' + self.VeX.format(x='X1'),
-                                          local_dict=self.__dict__)
-        self.Vg_minus_Ve_X2 = ne.evaluate(self.VgX.format(x='X2') + '-' + self.VeX.format(x='X2'),
-                                          local_dict=self.__dict__)
+        self.code_Vg_minus_Ve_X1 = self.VgX.format(x='X1') + '-' + self.VeX.format(x='X1')
+        self.code_Vg_minus_Ve_X2 = self.VgX.format(x='X2') + '-' + self.VeX.format(x='X2')
 
+        self.code_DX1 = 'sqrt(Vge ** 2 + 0.25 * ' + self.code_Vg_minus_Ve_X1 + ' ** 2)'
+        self.code_DX2 = 'sqrt(Vge ** 2 + 0.25 * ' + self.code_Vg_minus_Ve_X2 + ' ** 2)'
+
+        self.code_SX1 = 'sin(' + self.code_DX1 + '*dt) / ' + self.code_DX1
+        self.code_SX2 = 'sin(' + self.code_DX2 + '*dt) / ' + self.code_DX2
+
+        self.code_CX1 = 'cos(' + self.code_DX1 + '*dt)'
+        self.code_CX2 = 'cos(' + self.code_DX2 + '*dt)'
+
+        self.code_MX1 = '0.5 * ' + self.code_SX1 + ' * ' + self.code_Vg_minus_Ve_X1
+        self.code_MX2 = '0.5 * ' + self.code_SX2 + ' * ' + self.code_Vg_minus_Ve_X2
+
+        self.code_LX1 = self.code_SX1 + ' * Vge'
+        self.code_LX2 = self.code_SX2 + ' * Vge'
 
     def get_CML_matrices(self, q, t):
-        # assert q is self.X1 or q is self.X2, "Either X1 or X2 expected as coordinate"
+        assert q is self.X1 or q is self.X2, "Either X1 or X2 expected as coordinate"
 
-        Vge = self.Vge(q, t)
+        self.Vge = eval(self.codeVge)
 
-        self.Vg_minus_Ve = (self.Vg_minus_Ve_X1 if q is self.X1 else self.Vg_minus_Ve_X2)
-
-        D = np.sqrt(Vge ** 2 + 0.25 * self.Vg_minus_Ve_X1 ** 2)
-        S = np.sin(D * self.dt)
-        S /= D
-
-        C = np.cos(D * self.dt)
-
-        M = 0.5 * S * self.Vg_minus_Ve
-
-        L = S * Vge
+        if q is self.X1:
+            C = ne.evaluate(self.code_CX1, local_dict=self.__dict__)
+            M = ne.evaluate(self.code_MX1, local_dict=self.__dict__)
+            L = ne.evaluate(self.code_LX1, local_dict=self.__dict__)
+        else:
+            C = ne.evaluate(self.code_CX2, local_dict=self.__dict__)
+            M = ne.evaluate(self.code_MX2, local_dict=self.__dict__)
+            L = ne.evaluate(self.code_LX2, local_dict=self.__dict__)
 
         return C, M, L
 
@@ -157,8 +152,8 @@ class RhoPropagate:
         C, M, L = self.get_CML_matrices(self.X2, t)
         return C - 1j * M, -1j * L, C + 1j * M
 
-    def Vge(self, q, t):
-        return eval(self.codeVge)
+    # def Vge(self, q, t):
+    #     return eval(self.codeVge)
 
     def field(self, t):
         return eval(self.codefield)
